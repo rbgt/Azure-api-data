@@ -1,4 +1,4 @@
-# IaC - Azure - Terraform Template
+# IaC - Azure - Data pipeline on Terraform
 
 This repository contains a Terraform template for provisioning Azure resources with Github Actions.
 Can be used as a starting point for new projects involving Azure, Terraform and Github Actions.
