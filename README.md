@@ -1,43 +1,74 @@
-# IaC - Azure - Data pipeline on Terraform
+# Azure IaC Template: Terraform + GitHub Actions (OIDC)
 
-This repository contains a Terraform template for provisioning Azure resources with Github Actions.
-Can be used as a starting point for new projects involving Azure, Terraform and Github Actions.
+![Azure](https://img.shields.io/badge/Azure-0078D4?style=flat-square&logo=microsoftazure&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-azurerm_4.1-844FBA?style=flat-square&logo=terraform&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)
 
-## Getting Started
+A ready-to-use template to provision **Azure** resources with **Terraform** from **GitHub Actions**, using **passwordless OIDC authentication** (workload identity federation), a **remote state** in Azure Storage and a **manual approval gate** before any change is applied.
 
-These instructions will give you a copy of the project up and running on
-your local machine for development and testing purposes. See deployment
-for notes on deploying the project on a live system.
+Use it as a starting point for any project that needs Azure infrastructure deployed through CI/CD.
+
+## Highlights
+
+- 🔐 **No stored secrets for Azure login**: GitHub Actions gets a short-lived OIDC token, exchanged for an Entra ID token through a federated credential on the service principal.
+- 🗄️ **Remote Terraform state** in an Azure Storage blob container, authenticated with Entra ID (`use_azuread_auth`, `use_oidc`).
+- ✅ **Plan / Apply split**: the plan is produced in a first job and stored as an artifact; the apply job runs **only after manual approval** through a protected GitHub environment.
+- 📌 **Pinned provider** (`hashicorp/azurerm = 4.1.0`) for reproducible deployments.
+
+## Workflow
+
+```
+workflow_dispatch
+      │
+      ▼
+┌───────────────────────────┐        ┌──────────────────────────────┐
+│ Terraform-Init-Plan        │        │ Terraform-Apply              │
+│ env: azure-sp-secrets      │ ─────▶ │ env: deployment-approval     │
+│ az login (OIDC)            │  plan  │ (manual approval required)   │
+│ terraform init + plan      │artifact│ terraform init + apply plan  │
+└───────────────────────────┘        └──────────────────────────────┘
+```
+
+## Repository structure
+
+```
+.
+├── .github/workflows/
+│   ├── terraform-basic-workflow.yml  # Plan → approval → apply pipeline
+│   └── azure-vm-deployment.yml       # Skeleton workflow for a future VM deployment
+├── backend.tf    # azurerm remote state (Entra ID + OIDC auth)
+├── provider.tf   # azurerm provider, pinned version
+├── main.tf       # Resources to deploy (a resource group in this template)
+├── variables.tf  # Location, naming prefix, subscription ID
+└── output.tf     # Outputs (resource group name)
+```
+
+## Getting started
 
 ### Prerequisites
 
-Requirements for the software and other tools to build, test and push 
-- [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
-- [Terraform](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
-- [Github CLI](https://cli.github.com/)
+- An Azure subscription, the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) and [Terraform](https://developer.hashicorp.com/terraform/install)
+- A GitHub repository created from this template
 
-### Installing
+### 1. Prepare the Terraform state storage (one-off, manual)
 
-1. At first, you need to create a new Github repository from this template.
-2. Then, you need to configure the Github Actions secrets with your Azure credentials.
-   - You'll need to create a Service Principal in Azure and use its Client ID and Client Secret as the Github Actions secrets AZURE_CLIENT_ID and AZURE_CLIENT_SECRET.
-   - Also, you need to configure the Github Actions secrets with your Azure subscription ID as AZURE_SUBSCRIPTION_ID.
-3. Then, you can run the Github Actions workflow to provision the Azure resources.
+Create a resource group `rg-shared`, a storage account `tfstateblobproject` and a blob container `tfstatecontainer`, or change these names in `backend.tf` and in the workflow.
 
-Be careful on some points : 
-- A Service Principal is needed to be created manually in the Azure Active Directory of the subscription
-- The Service Principal needs to have the Contributor role on the resource group rg-shared and storage blob contributor role on the storage account tfstateblobproject
-- The Service Principal has to be configured with federated identity credentials for Github Actions
-- The storage account tfstateblobproject needs to be created manually before running the Github Actions workflow
-- The Github Actions secrets AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET have to be configured with the federated identity credentials of the Service Principal
-- terraform init has to be run with the backend-config parameter to use the secrets with the "use_azuread_auth = true" and "use_oidc = true" parameters in order to authenticate with Service Principal to the storage account
+### 2. Create the service principal
 
-## Versioning
+1. Register an application / service principal in Microsoft Entra ID.
+2. Add a **federated identity credential** for your GitHub repository and environment.
+3. Grant it the **Contributor** role on the target scope and **Storage Blob Data Contributor** on the state storage account.
 
-We use [Semantic Versioning](http://semver.org/) for versioning. For the versions
-available, see the [tags on this
-repository](https://github.com/PurpleBooth/a-good-readme-template/tags).
+### 3. Configure GitHub
 
-## Acknowledgments
+- Create two environments: `azure-sp-secrets` and `deployment-approval` (add required reviewers on the latter).
+- Add the secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`.
 
-Feel free to use this template for your own projects and comment this repository if you have any suggestions.
+### 4. Deploy
+
+Add your resources to `main.tf`, then run the **"Activate Terraform Script though Github Actions"** workflow from the Actions tab. Review the plan and approve the deployment.
+
+## Contributing
+
+Suggestions are welcome: feel free to open an issue or a pull request.
